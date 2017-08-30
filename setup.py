@@ -5,7 +5,7 @@ with open('README.rst', 'r') as f:
 
 setup(
     name='xmlx',
-    version='0.0.1',
+    version='0.0.3',
     description='A simple and compact XML parser.',
     long_description=ldesc,
     url='https://github.com/Kenny2github/xmlx',

@@ -49,7 +49,7 @@ format "name":<element>. {"b":<b>...</b>} for this case'''
             self.content = re.match(r'<(.*?)(?: .*?)*?>(?P<text>.*?)</\1>', text, flags=re.S).group('text') #get the content
             self.text = text #outerHTML
             self.children = [] #no children yet
-            for m in re.findall(r'((?:<(.*?)(?: .*?)*?>.*?</\2>)|(?:<.*?(?: .*?)*?/>))', self.content, flags=re.S): #for every child
+            for m in re.findall(r'((?:<(.*?).*?>.*?</\2>)|(?:<.*?/>))', self.content, flags=re.S): #for every child
                 self.children.append(Element(m[0])) #recursively add the child to list
             self.childrendict = {} #we have children (maybe) but we don't know that yet
             for c in self.children: #for every child
