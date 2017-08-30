@@ -21,5 +21,5 @@ setup(
         'Programming Language :: Python :: 3.4',
     ],
     keywords='xml dict parser',
-    packages=find_packages()
+    py_modules=['xmlx']
 )
