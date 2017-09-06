@@ -34,25 +34,27 @@ self.children - a list of sub-elements in this element.
 
 self.childrendict - a dictionary of sub-elements in the
 format "name":<element>. {"b":<b>...</b>} for this case'''
+        assert type(text) in [str, unicode], "expected str, got " + type(text).__name__
+        assert bool(re.match(r'((?:<([^<>/]*?)[^<>/]*?>.*?</\2>)|(?:<[^<>/]*?/>))', text, re.S)), "text does not match element format"
         text = re.sub(r'<[!\?].*?>', '', text, flags=re.S).strip() #remove all SGML weird stuff and comments and make sure we can match it
-        if re.match(r'(?!<(.*?).*?>.*?</\1>)(<.*?/>)', text, re.S): #if the element is <foo/> and not <foo>bar</foo>
-            self.name = re.match('<(.*?)(?:(?= .*?).*?)??/>', text, re.S).group(1) #get the name
+        if re.match(r'<[^<>/]*?/>', text, re.S): #if the element is <foo/> and not <foo>bar</foo>
+            self.name = re.match('<([^<>/]*?)(?:(?= [^<>/]*?)[^<>/]*?)??/>', text, re.S).group(1) #get the name
             self.attrib = {} #no attributes yet
-            for m in re.finditer(' (?P<name>.*?)=[\'"](?P<value>.*?)[\'"]', re.search('<.*?((?: .*?)*?) ?/>', text, re.S).group(1), flags=re.S): #for every attrib="value"
+            for m in re.finditer(' (?P<name>[^<>/]*?)=[\'"](?P<value>[^<>/]*?)[\'"]', re.search('<[^<>/]*?((?: [^<>/]*?)*?) ?/>', text, re.S).group(1), flags=re.S): #for every attrib="value"
                 self.attrib[m.group('name')] = m.group('value') #attrib=value
             self.content = '' #since this is <foo/> there's no content
             self.text = text #outerHTML
             self.children = [] #or children
             self.childrendict = {} #^^
         else: #it's <foo>bar</foo> after all
-            self.name = re.match(r'<(.*?).*?>.*?</\1>', text, re.S).group(1) #get the name
+            self.name = re.match(r'<([^<>/]*?)[^<>/]*?>.*?</\1>', text, re.S).group(1) #get the name
             self.attrib = {} #no attributes yet
-            for m in re.finditer(' (?P<name>.*?)="(?P<value>.*?)"', re.search('<.*?((?: .*?)*?)>', text, flags=re.S).group(1), flags=re.S): #for every attrib="value"
+            for m in re.finditer(' (?P<name>[^<>/]*?)="(?P<value>[^<>/]*?)"', re.search('<[^<>/]*?((?: [^<>/]*?)*?)>', text, flags=re.S).group(1), flags=re.S): #for every attrib="value"
                 self.attrib[m.group('name')] = m.group('value') #attrib=value
-            self.content = re.match(r'<(.*?)(?: .*?)*?>(?P<text>.*?)</\1>', text, flags=re.S).group('text') #get the content
+            self.content = re.match(r'<([^<>/]*?)[^<>/]*?>(?P<text>.*?)</\1>', text, flags=re.S).group('text') #get the content
             self.text = text #outerHTML
             self.children = [] #no children yet
-            for m in re.findall(r'((?:<(.*?).*?>.*?</\2>)|(?:<.*?/>))', self.content, flags=re.S): #for every child
+            for m in re.findall(r'((?:<([^<>/]*?)[^<>/]*?>.*?</\2>)|(?:<[^<>/]*?/>))', self.content, flags=re.S): #for every child
                 self.children.append(Element(m[0])) #recursively add the child to list
             self.childrendict = {} #we have children (maybe) but we don't know that yet
             for c in self.children: #for every child
