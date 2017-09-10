@@ -100,7 +100,10 @@ f return True."""
         p = kwargs.get('p', None) #get this element's parent (None if no parent)
         if p: #if we have a parent
             if f(self): #if the function returns True on ourself
-                p.children[p.children.index(self)+1].pre = self.pre + self.post + p.children[p.children.index(self)+1].pre #add our pre and post to the next element
+                try:
+                    p.children[p.children.index(self)+1].pre = self.pre + self.post + p.children[p.children.index(self)+1].pre #add our pre and post to the next element
+                except IndexError:
+                    p.children[p.children.index(self)-1].post += self.pre + self.post
                 p.children.pop(p.children.index(self)) #remove ourself
                 p._updateChildren() #update parent's children dict
     def returnchildren(self, f, **kwargs):
