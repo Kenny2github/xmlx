@@ -14,6 +14,6 @@ If you prefer dictionaries, simply use ``xmlx.elemdict(text)``:
 
 ``{'?':{},'@':'hello!','*':'<html>hello!</html>'}``
 
-``?`` is the element's attributes, ``@`` is its content (JS innerHTML), and ``*$
+``?`` is the element's attributes, ``@`` is its content (JS innerHTML), and ``*`` is its text (JS outerHTML).
 
 See help(xmlx) for further documentation.
