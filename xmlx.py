@@ -1,44 +1,73 @@
+"""
+xmlx - a small and compact XML parser in Python.
+Example usage:
+
+>>> dom = '''<html>
+<head><title>Hi</title></head>
+<body>
+<h1>Hello</h1>
+<p style="color:red">What's up?</p>
+<p>Not much.</p>
+</body>
+</html>'''
+>>> html = xmlx.Element(dom)
+>>> html
+<html>...</html at 0x...>
+>>> html.children
+[<head>...</head at 0x...>, <body>...</body at 0x...>]
+>>> html.returnchildren(lambda e: 'style' in e.attrib)
+[<p style="color:red">...</p at 0x...>]
+>>> html.returnchildren(lambda e: e.name == 'p')
+[<p style="color:red">...</p at 0x...>, <p>...</p at 0x...>]
+>>> html.removechildren(lambda e: e.name == 'p')
+>>> html.returnchildren(lambda e: e.name == 'p')
+[]
+>>> dom = html.tostring()
+"""
 import re #wow this is literally the only module used 0.0
 
-__all__ = ['Element', 'elemdict', 'rchildren']
+__all__ = ['Element']
 
 class _updatingList(list, object): #updating list
     '''A list that updates the element's text whenever an item is edited or deleted.'''
-    def __init__(self, iterable=[], ins=None): #init
-        list.__init__(self, iterable) #call builtin init
-        self.ins = ins #get the class
-    def __setitem__(self, key, val): #set item
-        list.__setitem__(self, key, val) #call builtin setitem
-        self.ins.toString(False) #update text from children
-        self.ins._updateChildrenFromContent() #update children from text
-    def __delitem__(self, key): #delete item
+    def __init__(self, iterable=None, ins=None):
+        list.__init__(self, [] if iterable is None else iterable)
+        self.ins = ins
+    def __setitem__(self, key, val):
+        list.__setitem__(self, key, val)
+        self.ins.tostring(False)
+        self.ins.updatechildrenfromcontent()
+    def __delitem__(self, key):
         try:
-            self.ins.children[key+1].pre = self.ins.children[key].pre + self.ins.children[key].post + self.ins.children[key+1].pre #merge pre and post into adjacent element
-        except IndexError: #last element
-            if len(self.ins.children) < 2: self.ins.content = self.ins.children[key].pre + self.ins.children[key].post #if deleting this element will result in nothing left, change content instead of merging
-            else: self.ins.children[key-1].post += self.ins.children[key].pre + self.ins.children[key].post #otherwise merge previous element
-        list.__delitem__(self, key) #call builtin delitem
-        self.ins.toString(False) #update text from children
-        self.ins._updateChildrenFromContent() #update children from text
-    def __delslice__(self, start, stop): #delete slice :)
-        for i in range(start, stop): #for every index
-            self.__delitem__(i) #delete that item
+            self.ins.children[key+1].pre = self.ins.children[key].pre \
+                                           + self.ins.children[key].post \
+                                           + self.ins.children[key+1].pre
+        except IndexError:
+            if len(self.ins.children) < 2:
+                self.ins.content = self.ins.children[key].pre \
+                                   + self.ins.children[key].post
+            else:
+                self.ins.children[key-1].post += self.ins.children[key].pre \
+                                                 + self.ins.children[key].post
+        list.__delitem__(self, key)
+        self.ins.tostring(False)
+        self.ins.updatechildrenfromcontent()
+    def __delslice__(self, start, stop):
+        for i in range(start, stop):
+            self.__delitem__(i)
 
-class Element(object): #element class, here we go!
-    def __str__(self): #string representation
-        return '<'+self.name+' '*int(bool(self.attrib))+' '.join([k+'="'+v+'"' for k, v in self.attrib.items()[:3]])+'>...</'+self.name+' at '+hex(id(self))+'>' #i.e. <p>...</p at mem>
-    __repr__ = __str__ #repr = str duh
-    __unicode__ = __str__ #for py3
-    def __hash__(self):
-        '''Hash of the element.
-
-The return value is the hash of a combination of
-the element's name, text, and attributes, so the
-hashes of two elements with the same name, text,
-and attributes will compare equal.'''
-        return hash(self.toString())
-    __eq__ = lambda s, o: hash(s) == hash(o)
-    def __init__(self, text, **xtrs): #INIT
+class Element(object):
+    """A Python object representing an XML element."""
+    def __str__(self):
+        """Return a string representation of the element."""
+        return '<' \
+               + self.name \
+               + ' ' * int(bool(self.attrib)) \
+               + ' '.join([k + '="' + v + '"' \
+                           for k, v in self.attrib.items()[:3]]) \
+               + '>...</' + self.name + ' at ' + hex(id(self)) + '>'
+    __repr__ = __str__
+    def __init__(self, text, **xtrs):
         '''Initialize the element from a string.
 
 Suppose we have an element string:
@@ -59,135 +88,149 @@ self.children - a list of sub-elements in this element.
 [<b>...</b>] for this case
 
 self.childrendict - a dictionary of sub-elements in the
-format "name":<element>. {"b":<b>...</b>} for this case'''
-        assert type(text) in [str, unicode], "expected str, got " + type(text).__name__ #assert str or unicode
-        text = re.sub(r'<[!\?].*?>', '', text, flags=re.S).strip() #remove all SGML weird stuff and comments and make sure we can match it
-        assert bool(re.match(r'((?:<([^<>/]*?)(?: [^<>]*?)?>.*?</\2>)|(?:<[^<>/]*?/>))', text, re.S)), "text does not match element format" #assert that this is an element
-        if re.match(r'<[^<>/]*?/>', text, re.S): #if the element is <foo/> and not <foo>bar</foo>
-            self.name = re.match('<([^<>/]*?)(?: [^<>]*?)?/>', text, re.S).group(1) #get the name
-            self.attrib = {} #no attributes yet
-            for m in re.finditer(' (?P<name>[^<>/]*?)=(?:[\'"](?P<valueq>[^<>]*?)[\'"]|(?P<valuewq>[^<>/\'"]*))', re.search('<[^<>/]*?((?: [^<>/]*?)*?)?/>', text, flags=re.S).group(1), flags=re.S): #for every attrib="value"
-                self.attrib[m.group('name')] = m.group('valueq') or m.group('valuewq') or '' #attrib=value
-            self.content = '' #since this is <foo/> there's no content
-            self.text = text #outerHTML
-            self.pre = xtrs.get('pre', '') #text before us, if we're a child element
-            self.post = xtrs.get('post', '') #text after us, if we're a child element
-            self._updateChildrenFromContent() #just to be consistent
-        else: #it's <foo>bar</foo> after all
-            self.name = re.match(r'<([^<>/]*?)(?: [^<>]*?)?>.*?</\1>', text, re.S).group(1) #get the name
-            self.attrib = {} #no attributes yet
-            for m in re.finditer(' (?P<name>[^<>/]*?)=(?:[\'"](?P<valueq>[^<>]*?)[\'"]|(?P<valuewq>[^<>/\'"]*))', re.search('<[^<>/]*?((?: [^<>]*?)*?)>', text, flags=re.S).group(1), flags=re.S): #for every attrib="value"
-                self.attrib[m.group('name')] = m.group('valueq') or m.group('valuewq') or '' #attrib=value
-            self.content = re.match(r'<([^<>/]*?)(?: [^<>]*?)?>(?P<text>.*?)</\1>', text, flags=re.S).group('text') #get the content
-            self.text = text #outerHTML
-            self.pre = xtrs.get('pre', '') #text before us, if we're a child element
-            self.post = xtrs.get('post', '') #text after us, if we're a child element
-            self._updateChildrenFromContent()
-    def _updateChildrenFromContent(self):
-        self.children = [] #no children yet
-        for m in re.findall(r'([^<>]*)((?:<([^<>/]*?)(?: [^<>]*?)?>.*?</\3>)|(?:<[^<>/]*?/>))([^<>]*)', self.content, flags=re.S): #for every child
-            self.children.append(Element(m[1], pre=m[0], post=m[-1])) #recursively add the child to list
-        self.children = _updatingList(self.children, self) #change children from list to updating list
-    def toString(self, fromcontent=True):
-        """Return a DOM string (minified) of this element."""
-        if fromcontent: self._updateChildrenFromContent() #so if fromcontent is false, we're updating the text instead of returning the string
-        result = '<' + self.name + ''.join([' ' + k + '="' + v + '"' for k, v in self.attrib.items()]) + '>' #<element attrib1="attribv" attrib2="attribv">
-        if self.children: #if this element has children
-            for c in self.children: #for every child asdf<elem>...</elem>fdsa
-                result += c.pre #asdf
-                result += c.toString() #<elem>...</elem>
-                result += c.post #fdsa
-        else: #no children
-            if self.content: #if there aren't any children but we do have content
-                result += self.content #content
-            else: #no childre, no content
-                result = result[:-1] + '/>' #make it <elem/>
-                return result #return now
-        result += '</' + self.name + '>' #add </element>
-        if fromcontent: return result #if fromcontent return
-        else: #otherwise
-            self.text = result #update text
-            self.content = re.match(r'<([^<>/]*?)[^<>/]*?>(?P<text>.*?)</\1>', self.text, flags=re.DOTALL).group('text') #and content
-    def removechildren(self, f, **kwargs):
-        """Recursively remove all of an element e's children
-that match the condition f.
+format "name":<element>. {"b":<b>...</b>} for this case
+'''
+        assert isinstance(text, str), \
+               "expected str, got " \
+               + type(text).__name__
+        text = re.sub(r'<[!\?].*?>',
+                      '',
+                      text,
+                      flags=re.S).strip()
+        assert bool(re.match(r'((?:<([^<>/]*?)(?: [^<>]*?)?>.*?</\2>)|(?:<[^<>/]*?/>))',
+                             text, re.S)), "text does not match element format"
+        if re.match(r'<[^<>/]*?/>', text, re.S):
+            self.name = re.match('<([^<>/]*?)(?: [^<>]*?)?/>',
+                                 text,
+                                 re.S).group(1)
+            self.attrib = {}
 
-f must be a function, with one required argument, into
+            for match in re.finditer(' (?P<name>[^<>/]*?)=(?:[\'"](?P<valueq>[^<>]*?)[\'"]'
+                                     + '|(?P<valuewq>[^<>/\'"]*))',
+                                     re.search('<[^<>/]*?((?: [^<>/]*?)*?)?/>',
+                                               text,
+                                               flags=re.S).group(1),
+                                     flags=re.S):
+                self.attrib[match.group('name')] = match.group('valueq') \
+                                               or match.group('valuewq') \
+                                               or ''
+
+            self.content = ''
+            self.text = text
+            self.pre = xtrs.get('pre', '')
+            self.post = xtrs.get('post', '')
+            self.updatechildrenfromcontent()
+        else:
+            self.name = re.match(r'<([^<>/]*?)(?: [^<>]*?)?>.*?</\1>',
+                                 text,
+                                 re.S).group(1)
+            self.attrib = {}
+
+            for match in re.finditer(' (?P<name>[^<>/]*?)=(?:[\'"](?P<valueq>[^<>]*?)[\'"]'
+                                     + '|(?P<valuewq>[^<>/\'"]*))',
+                                     re.search('<[^<>/]*?((?: [^<>]*?)*?)>',
+                                               text,
+                                               flags=re.S).group(1),
+                                     flags=re.S):
+                self.attrib[match.group('name')] = match.group('valueq') \
+                                               or match.group('valuewq') \
+                                               or ''
+
+            self.content = re.match(r'<([^<>/]*?)(?: [^<>]*?)?>(?P<text>.*?)</\1>',
+                                    text,
+                                    flags=re.S).group('text')
+            self.text = text
+            self.pre = xtrs.get('pre', '')
+            self.post = xtrs.get('post', '')
+            self.updatechildrenfromcontent()
+    def updatechildrenfromcontent(self):
+        """Update children list from content."""
+        self.children = []
+        for match in re.findall(r'([^<>]*)((?:<([^<>/]*?)(?: [^<>]*?)?>.*?</\3>)'
+                                + '|(?:<[^<>/]*?/>))([^<>]*)',
+                                self.content,
+                                flags=re.S):
+            self.children.append(Element(match[1], pre=match[0], post=match[-1]))
+
+        self.children = _updatingList(self.children, self)
+    def tostring(self, fromcontent=True):
+        """Return a DOM string (minified) of this element."""
+        if fromcontent:
+            self.updatechildrenfromcontent()
+        result = '<' + self.name \
+                 + ''.join([' ' + k + '="' + v + '"'
+                            for k, v in self.attrib.items()]) + '>'
+        if self.children:
+            for child in self.children:
+                result += child.pre
+                result += child.tostring()
+                result += child.post
+        else:
+            if self.content:
+                result += self.content
+            else:
+                result = result[:-1] + '/>'
+                return result
+        result += '</' + self.name + '>'
+        if fromcontent:
+            return result
+        else:
+            self.text = result
+            self.content = re.match(r'<([^<>/]*?)[^<>/]*?>(?P<text>.*?)</\1>',
+                                    self.text, flags=re.DOTALL).group('text')
+    def removechildren(self, func, **kwargs):
+        """Recursively remove all of an element e's children
+that match the condition func.
+
+func must be a function, with one required argument, into
 which will be passed the element being currently worked on.
 It must return a boolean.
 
 The original element will have all children removed that made
-f return True."""
-        for c in self.children: #for every child
-            c.removechildren(f, p=self) #remove that child's children too
-        p = kwargs.get('p', None) #get this element's parent (None if no parent)
-        if p: #if we have a parent
-            if f(self): #if the function returns True on ourself
-                del p.children[p.children.index(self)] #remove ourself - the updating list thing figures out the rest
-    def returnchildren(self, f, **kwargs):
-        """Recursively return all of an element e's children
-that match the condition f.
+func return True.
+"""
+        for child in self.children:
+            child.removechildren(func, p=self)
+        parent = kwargs.get('p', None)
+        if parent:
+            if func(self):
+                del parent.children[parent.children.index(self)]
+    def returnchild(self, func):
+        """Return the first child that matches the condition func.
 
-f must be a function, with one required argument, into
+func must be a function, with one required argument, into
 which will be passed the element being currently worked on.
 It must return a boolean.
 
-The return value is a list of all child elements that made f return
-True."""
-        result = [] #no matches yet
-        for c in self.children: #for every child
-            result.extend(c.returnchildren(f, p=self)) #look for the child's children that match
-        p = kwargs.get('p', None) #get this element's parent
-        if p: #if we have a parent
-            if f(self): #if the function returns True on ourself
-                result.append(self) #add ourself to the results
-        return result #return
+The return value is either a single element that made func return True,
+or None.
+"""
+        if func(self):
+            return self
+        else:
+            if self.children:
+                for child in self.children:
+                    has = child.returnchild(func)
+                    if has is not None:
+                        return has
+            else:
+                return None
+    def returnchildren(self, func, **kwargs):
+        """Recursively return all of the element's children
+that match the condition func.
 
-def elemdict(text):
-    """Make a dictionary of elements instead of an object.
+func must be a function, with one required argument, into
+which will be passed the element being currently worked on.
+It must return a boolean.
 
-In an element dict, the key @ is its innerHTML, * is
-its outerHTML, and ? is its attributes as a dict.
-
-Any other keys are lists of child elements of that name."""
-    root = Element(text) #just quickly make an element out of it anyway
-    elem = {'?': root.attrib} #store its attributes under the key ?
-    for c in root.children: #for every child
-        if not c.name in elem: #if the child's name hasn't been recorded yet
-            elem[c.name] = [elemdict(c.text)] #recursively add its name and itself
-        else: #otherwise
-            elem[c.name].append(elemdict(c.text)) #just add the element to its list under its name
-    #note: there's no point in having its children as a plain list.
-    elem['@'] = root.content #innerHTML
-    elem['*'] = root.text #outerHTML
-    return elem
-
-def rchildren(elem,indent=0): #recursively print children
-    """Recursively print an element's children.
-
-The return value is a string in the format:
-base element
-|-child element
-| |-grandchild element
-| |-another grandchild element
-| | |-great-grandchild element
-|-another child element"""
-    result = ('| ' * (indent - 1)) + ('|-' * bool(indent)) + str(elem) #add itself to the string
-    for child in elem.children: #and for every one of its children
-        result += '\n' + rchildren(child, indent+1) #add it with one more indent
-    return result #finally return the string
-
-if __name__ == '__main__': #demo html
-    DOM = '''<html>
-    <head>
-        <title>asdf</title>
-        <link rel="stylesheet" href="stylesheet.css"/>
-    </head>
-    <body>
-        <h1>Woo!</h1>
-    </body>
-</html>''' #demo file
-    test = Element(DOM) #make an element out of the DOM
-    print('Original DOM:\n' + DOM)
-    print('\nRecursively printed objectified DOM:\n' + rchildren(test)) #recursively print its children
-    print('\nDictified DOM:\n' + str(elemdict(DOM))) #print the dictionary form
+The return value is a list of all child elements that made func return
+True.
+"""
+        result = []
+        for child in self.children:
+            result.extend(child.returnchildren(func, p=self))
+        parent = kwargs.get('p', None)
+        if parent:
+            if func(self):
+                result.append(self)
+        return result
