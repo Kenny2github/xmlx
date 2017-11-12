@@ -64,9 +64,13 @@ class Element(object):
                + self.name \
                + ' ' * int(bool(self.attrib)) \
                + ' '.join([k + '="' + v + '"' \
-                           for k, v in self.attrib.items()[:3]]) \
+                           for k, v in list(self.attrib.items())[:3]]) \
                + '>...</' + self.name + ' at ' + hex(id(self)) + '>'
     __repr__ = __str__
+    def __hash__(self):
+        return hash(self.tostring())
+    def __eq__(self, other):
+        return hash(self) == hash(other)
     def __init__(self, text, **xtrs):
         '''Initialize the element from a string.
 
@@ -190,11 +194,17 @@ The original element will have all children removed that made
 func return True.
 """
         for child in self.children:
+            print('this', self.name, 'has', len(self.children), 'children')
+            print(child.name)
             child.removechildren(func, p=self)
         parent = kwargs.get('p', None)
         if parent:
             if func(self):
-                del parent.children[parent.children.index(self)]
+                for child in parent.children:
+                    print(len(parent.children), 'children')
+                    if self == child:
+                        print('delete', child.name)
+                        del parent.children[parent.children.index(child)]
     def returnchild(self, func):
         """Return the first child that matches the condition func.
 
@@ -215,7 +225,7 @@ or None.
                         return has
             else:
                 return None
-    def returnchildren(self, func, **kwargs):
+    def returnchildren(self, func):
         """Recursively return all of the element's children
 that match the condition func.
 
@@ -223,14 +233,77 @@ func must be a function, with one required argument, into
 which will be passed the element being currently worked on.
 It must return a boolean.
 
-The return value is a list of all child elements that made func return
+The return value is a tuple of all child elements that made func return
 True.
 """
         result = []
         for child in self.children:
-            result.extend(child.returnchildren(func, p=self))
-        parent = kwargs.get('p', None)
-        if parent:
-            if func(self):
-                result.append(self)
-        return result
+            result.extend(child.returnchildren(func))
+        if func(self):
+            result.insert(0, self)
+        return tuple(result)
+
+    def queryselector(self, selector, **kwds):
+        """Return the first child (including self) that matches a CSS
+        selector."""
+        expression = re.compile(r'(?=[\s\S]+)(?:(?P<name>[-a-zA-Z]+\
+[-a-zA-Z0-9]*)?(?:(?P<class>\.[-a-zA-Z]+[-a-z-A-Z0-9]*)|(?P<id>#[-a-zA-Z]*\
+[-a-zA-Z0-9]*)){0,2}(?P<attrib>\[(?P<key>[-a-zA-Z]+[-a-zA-Z0-9]*)\
+(?:(?P<eqmod>[$|^~*])?=(?P<value>[-a-zA-Z]+[-a-zA-Z0-9]*))?\])?|\*)')
+        selec = re.match(expression, selector)
+        assert selec
+        nam = selec.group('name')
+        cls = selec.group('class')
+        ids = selec.group('id')
+        key = selec.group('key')
+        emd = selec.group('eqmod')
+        val = selec.group('value')
+        exp = 'el.name == '
+        exp += 'el.name' if nam in (None, '*') else repr(nam)
+        exp += " and el.attrib.get('class', None) == "
+        exp += "el.attrib.get('class', None)" if cls is None else repr(cls[1:])
+        exp += " and el.attrib.get('id', None) == "
+        exp += "el.attrib.get('id', None)" if ids is None else repr(ids[1:])
+        exp += " and ("
+        if emd == None:
+            exp += "el.attrib.get("
+            exp += repr(key)
+            exp += ", None) == "
+            exp += "el.attrib.get(" + repr(key) + ', None)' if val is None \
+                   else repr(val)
+        elif emd == '$':
+            exp += "el.attrib.get("
+            exp += repr(key)
+            exp += ", '').endswith("
+            exp += repr(val)
+            exp += ')'
+        elif emd == '|':
+            exp += "el.attrib.get("
+            exp += repr(key)
+            exp += ", None) == "
+            exp += repr(val)
+            exp += " or el.attrib.get("
+            exp += repr(key)
+            exp += ", '').startswith("
+            exp += repr(val)
+            exp += " + '-')"
+        elif emd == '^':
+            exp += "el.attrib.get("
+            exp += repr(key)
+            exp += ", '').startswith("
+            exp += repr(val)
+            exp += ')'
+        elif emd in ('~', '*'):
+            exp += repr(val)
+            exp += ' in el.attrib.get('
+            exp += repr(key)
+            exp += ", '')"
+        exp += ')'
+        if kwds.get('every', False):
+            return self.returnchildren(lambda el: eval(exp))
+        return self.returnchild(lambda el: eval(exp))
+
+    def queryselectorall(self, selector):
+        """Return a tuple of all children (including self) that match a CSS
+        selector."""
+        return self.queryselector(selector, every=True)
